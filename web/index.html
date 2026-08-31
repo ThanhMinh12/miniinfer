@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MiniInfer</title>
+  <style>
+    body { max-width: 52rem; margin: 3rem auto; padding: 0 1rem; font: 16px system-ui; }
+    textarea, input { box-sizing: border-box; width: 100%; margin: .4rem 0 1rem; }
+    textarea { min-height: 8rem; }
+    button { margin-right: .5rem; padding: .55rem .9rem; }
+    pre { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; min-height: 5rem; }
+  </style>
+</head>
+<body>
+  <h1>MiniInfer browser demo</h1>
+  <p>Select an int8 <code>.miniinfer</code> model. Inference runs locally in WASM.</p>
+  <input id="model" type="file" accept=".miniinfer">
+  <textarea id="prompt">The meaning of life is</textarea>
+  <button id="generate" disabled>Generate</button><button id="cancel" disabled>Cancel</button>
+  <pre id="output"></pre>
+  <script>var Module = { onRuntimeInitialized() {
+    window.miniinferRuntimeReady = true; window.miniinferReady?.();
+  } };</script>
+  <script src="miniinfer_wasm.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
