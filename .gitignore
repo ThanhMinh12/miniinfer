@@ -1,0 +1,19 @@
+# CMake build output
+/build*/
+/cmake-build-*/
+CMakeUserPresets.json
+compile_commands.json
+
+# Generated models and benchmark artifacts
+*.miniinfer
+*.model
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
