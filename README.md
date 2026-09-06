@@ -24,7 +24,8 @@ documented below.
 - SmolLM2's 9 query heads to 3 KV heads mapping.
 - Exact byte-level BPE tokenization from `tokenizer.json`, including added
   tokens, Unicode pre-tokenization, merges, and decoding.
-- Greedy autoregressive generation with EOS and context-length checks.
+- Greedy and seeded temperature/top-k/top-p autoregressive generation with EOS
+  and context-length checks.
 - Incremental KV caching and a deliberately slow recompute reference mode.
 - Scalar, persistent multithreaded, and runtime-dispatched AVX2 linear kernels.
 - F32, BF16, and symmetric Q8-per-output-row model weights with FP32
@@ -54,7 +55,7 @@ prompt
            -> RMSNorm -> SwiGLU MLP -> residual]
   -> final RMSNorm
   -> tied embedding / LM head
-  -> greedy next token
+  -> greedy or sampled next token
 ```
 
 All activations and arithmetic used scalar FP32 loops. Each projection was a
@@ -66,6 +67,11 @@ The scalar path was compared layer by layer with Hugging Face. For the prompt
 `Hello world`, the final maximum absolute logit difference was
 `4.48e-05`, and three generated greedy tokens were identical. That scalar path
 remains the correctness reference for every later kernel.
+
+Greedy decoding is the default because it makes token-for-token comparisons
+unambiguous. Once that path matched, seeded temperature, top-k, and nucleus
+sampling were added as a policy above logits; sampling does not alter model
+execution or cache behavior.
 
 ### 2. Identify what was bad about the baseline
 
@@ -249,6 +255,13 @@ backward-compatible with version 3 and stores tied embeddings only once.
   --cpu-kernel auto
 ```
 
+For reproducible stochastic sampling:
+
+```sh
+./build-avx2/infer smollm2-135m.miniinfer "Once upon a time" \
+  --max-tokens 64 --temperature 0.8 --top-k 40 --top-p 0.95 --seed 42
+```
+
 Useful runtime options:
 
 | Option | Values | Purpose |
@@ -258,6 +271,10 @@ Useful runtime options:
 | `--threads` | integer | Persistent CPU worker count |
 | `--cpu-kernel` | `auto`, `scalar`, `avx2` | Kernel dispatch policy |
 | `--backend` | `cpu`, `webgpu` | Execution backend when WebGPU is compiled |
+| `--temperature` | float >= 0 | Zero selects greedy; positive values sample |
+| `--top-k` | integer | Keep the highest K logits; zero keeps all |
+| `--top-p` | float in `(0,1]` | Keep the smallest nucleus reaching P mass |
+| `--seed` | integer | Reproducible sampling RNG seed |
 
 Generation stops on EOS and rejects empty prompts, invalid token IDs, and
 requests exceeding the configured context.
@@ -370,8 +387,8 @@ web/                 Minimal browser demo
 
 ## Current limitations and next work
 
-- Greedy decoding only; temperature, top-k, and top-p sampling are not yet
-  implemented.
+- Sampling uses a fixed seed for reproducibility but does not yet expose
+  repetition, frequency, or presence penalties.
 - Q8 is a simple per-row scheme and needs perplexity evaluation plus better
   quantization before quality claims.
 - AVX2 is the only optimized CPU ISA; ARM NEON and other SIMD paths are absent.

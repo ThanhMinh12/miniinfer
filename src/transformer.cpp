@@ -1,8 +1,10 @@
 #include "miniinfer/transformer.h"
 #include "miniinfer/kernels.h"
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
+#include <numeric>
 #include <stdexcept>
 
 namespace miniinfer {
@@ -278,21 +280,79 @@ int greedy(const Tensor& logits) {
   return static_cast<int>(best);
 }
 
+Sampler::Sampler(SamplingOptions options)
+    : options_(options), random_(options.seed) {
+  if (!std::isfinite(options_.temperature) || options_.temperature < 0.0f)
+    throw std::invalid_argument("temperature must be finite and non-negative");
+  if (!std::isfinite(options_.top_p) || options_.top_p <= 0.0f || options_.top_p > 1.0f)
+    throw std::invalid_argument("top-p must be in the interval (0, 1]");
+}
+
+int Sampler::sample(const Tensor& logits) {
+  if (logits.shape().size() != 1 || logits.size() == 0)
+    throw std::invalid_argument("sampling expects non-empty rank-1 logits");
+  if (options_.temperature <= 0.0f) return greedy(logits);
+
+  std::vector<size_t> candidates(logits.size());
+  std::iota(candidates.begin(), candidates.end(), size_t{0});
+  for (float value : logits.values())
+    if (!std::isfinite(value)) throw std::runtime_error("cannot sample non-finite logits");
+  std::sort(candidates.begin(), candidates.end(), [&](size_t left, size_t right) {
+    if (logits[left] == logits[right]) return left < right;
+    return logits[left] > logits[right];
+  });
+  if (options_.top_k != 0 && candidates.size() > options_.top_k)
+    candidates.resize(options_.top_k);
+
+  const float maximum = logits[candidates.front()] / options_.temperature;
+  std::vector<double> weights(candidates.size());
+  double total = 0.0;
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    weights[i] = std::exp(static_cast<double>(
+        logits[candidates[i]] / options_.temperature - maximum));
+    total += weights[i];
+  }
+  if (!std::isfinite(total) || total <= 0.0)
+    throw std::runtime_error("sampling probabilities are invalid");
+
+  if (options_.top_p < 1.0f) {
+    double cumulative = 0.0;
+    size_t keep = 0;
+    do {
+      cumulative += weights[keep] / total;
+      ++keep;
+    } while (keep < weights.size() && cumulative < options_.top_p);
+    candidates.resize(keep);
+    weights.resize(keep);
+    total = std::accumulate(weights.begin(), weights.end(), 0.0);
+  }
+
+  const double draw = std::generate_canonical<double, 53>(random_) * total;
+  double cumulative = 0.0;
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    cumulative += weights[i];
+    if (draw < cumulative) return static_cast<int>(candidates[i]);
+  }
+  return static_cast<int>(candidates.back());
+}
+
 std::vector<int> generate(const Model& model, const Backend& backend,
                           const std::vector<int>& prompt, size_t max_tokens,
-                          CacheMode mode) {
-  return generate_stream(model, backend, prompt, max_tokens, mode, {});
+                          CacheMode mode, SamplingOptions sampling) {
+  return generate_stream(model, backend, prompt, max_tokens, mode, {}, sampling);
 }
 
 std::vector<int> generate_stream(const Model& model, const Backend& backend,
                                  const std::vector<int>& prompt, size_t max_tokens,
                                  CacheMode mode,
-                                 const std::function<bool(int)>& on_token) {
+                                 const std::function<bool(int)>& on_token,
+                                 SamplingOptions sampling) {
   validate_prompt(model, prompt);
   if (max_tokens > model.config.context - prompt.size())
     throw std::invalid_argument("requested generation exceeds the model context length");
   std::vector<int> output = prompt;
   if (max_tokens == 0) return output;
+  Sampler sampler(sampling);
 
   Tensor logits;
   std::unique_ptr<KVCache> cache;
@@ -307,7 +367,7 @@ std::vector<int> generate_stream(const Model& model, const Backend& backend,
   }
 
   for (size_t generated = 0; generated < max_tokens; ++generated) {
-    const int next = greedy(logits);
+    const int next = sampler.sample(logits);
     output.push_back(next);
     if (on_token && !on_token(next)) break;
     if (next == model.tokenizer.eos_id()) break;

@@ -19,14 +19,16 @@ namespace {
 void usage() {
   std::cerr << "usage: infer model.miniinfer \"prompt\" [--max-tokens N] "
                "[--cache kv|recompute] [--threads N] "
-               "[--cpu-kernel auto|scalar|avx2] [--backend cpu|webgpu]\n"
+               "[--cpu-kernel auto|scalar|avx2] [--backend cpu|webgpu] "
+               "[--temperature F] [--top-k N] [--top-p F] [--seed N]\n"
             << "       infer --inspect model.miniinfer\n"
             << "       infer --tokenize model.miniinfer \"text\"\n"
             << "       infer --logits model.miniinfer \"prompt\"\n"
             << "       infer --trace model.miniinfer \"prompt\"\n"
             << "       infer --generate-ids model.miniinfer \"prompt\" N "
                "[--cache kv|recompute] [--threads N] "
-               "[--cpu-kernel auto|scalar|avx2] [--backend cpu|webgpu]\n";
+               "[--cpu-kernel auto|scalar|avx2] [--backend cpu|webgpu] "
+               "[--temperature F] [--top-k N] [--top-p F] [--seed N]\n";
 }
 
 CPUKernel parse_kernel(const std::string& value) {
@@ -52,6 +54,7 @@ struct RuntimeOptions {
   CPUOptions cpu;
   CacheMode cache = CacheMode::KV;
   std::string backend = "cpu";
+  SamplingOptions sampling;
 };
 
 void parse_runtime_option(int& index, int argc, char** argv, RuntimeOptions& options) {
@@ -67,6 +70,14 @@ void parse_runtime_option(int& index, int argc, char** argv, RuntimeOptions& opt
     if (options.backend != "cpu" && options.backend != "webgpu")
       throw std::invalid_argument("backend must be cpu or webgpu");
   }
+  else if (option == "--temperature" && index + 1 < argc)
+    options.sampling.temperature = std::stof(argv[++index]);
+  else if (option == "--top-k" && index + 1 < argc)
+    options.sampling.top_k = std::stoull(argv[++index]);
+  else if (option == "--top-p" && index + 1 < argc)
+    options.sampling.top_p = std::stof(argv[++index]);
+  else if (option == "--seed" && index + 1 < argc)
+    options.sampling.seed = std::stoull(argv[++index]);
   else
     throw std::invalid_argument("unknown or incomplete runtime option: " + option);
 }
@@ -185,7 +196,7 @@ int main(int argc, char** argv) {
         parse_runtime_option(index, argc, argv, options);
       std::unique_ptr<Backend> backend = make_backend(options);
       std::vector<int> tokens = generate(model, *backend, prompt, std::stoull(argv[4]),
-                                         options.cache);
+                                         options.cache, options.sampling);
       std::cout << "{\"prompt_tokens\":"; print_array(prompt);
       std::cout << ",\"tokens\":"; print_array(tokens);
       std::cout << ",\"generated\":";
@@ -207,7 +218,8 @@ int main(int argc, char** argv) {
     std::vector<int> prompt = model.tokenizer.encode(argv[2]);
     std::unique_ptr<Backend> backend = make_backend(options);
     const auto start = std::chrono::steady_clock::now();
-    std::vector<int> tokens = generate(model, *backend, prompt, max_tokens, options.cache);
+    std::vector<int> tokens = generate(model, *backend, prompt, max_tokens,
+                                       options.cache, options.sampling);
     const double seconds = std::chrono::duration<double>(
         std::chrono::steady_clock::now() - start).count();
     const size_t generated = tokens.size() - prompt.size();
@@ -219,6 +231,8 @@ int main(int argc, char** argv) {
       std::cout << ", threads=" << options.cpu.threads;
     std::cout
               << ", cache=" << (options.cache == CacheMode::KV ? "kv" : "recompute")
+              << ", sampling="
+              << (options.sampling.temperature <= 0.0f ? "greedy" : "stochastic")
               << '\n';
     return 0;
   } catch (const std::exception& error) {

@@ -1,9 +1,30 @@
 #pragma once
 #include "miniinfer/backend.h"
 #include "miniinfer/model.h"
+#include <cstdint>
 #include <functional>
+#include <random>
 namespace miniinfer {
 enum class CacheMode { Recompute, KV };
+
+struct SamplingOptions {
+  // A non-positive temperature selects exact greedy decoding.
+  float temperature = 0.0f;
+  size_t top_k = 0;  // Zero keeps the full vocabulary.
+  float top_p = 1.0f;
+  uint64_t seed = 42;
+};
+
+class Sampler {
+ public:
+  explicit Sampler(SamplingOptions options = {});
+  int sample(const Tensor& logits);
+  const SamplingOptions& options() const { return options_; }
+
+ private:
+  SamplingOptions options_;
+  std::mt19937_64 random_;
+};
 
 class KVCache {
  public:
@@ -36,9 +57,11 @@ Tensor prompt_logits_batched(const Model&, const Backend&,
                              const std::vector<int>& prompt);
 int greedy(const Tensor& logits);
 std::vector<int> generate(const Model&, const Backend&, const std::vector<int>& prompt,
-                          size_t max_tokens, CacheMode mode = CacheMode::KV);
+                          size_t max_tokens, CacheMode mode = CacheMode::KV,
+                          SamplingOptions sampling = {});
 std::vector<int> generate_stream(const Model&, const Backend&,
                                  const std::vector<int>& prompt, size_t max_tokens,
                                  CacheMode mode,
-                                 const std::function<bool(int)>& on_token);
+                                 const std::function<bool(int)>& on_token,
+                                 SamplingOptions sampling = {});
 }

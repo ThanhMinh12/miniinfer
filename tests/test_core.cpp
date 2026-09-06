@@ -73,6 +73,26 @@ int main() {
   Tensor normalized = rmsnorm(Tensor({2}, 3.0f), Tensor({2}, 1.0f), 1e-5f);
   assert(near(normalized[0], 1.0f, 1e-3f));
 
+  Tensor sample_logits({4});
+  sample_logits[0] = -1.0f; sample_logits[1] = 0.0f;
+  sample_logits[2] = 1.0f; sample_logits[3] = 3.0f;
+  Sampler greedy_sampler;
+  assert(greedy_sampler.sample(sample_logits) == 3);
+  Sampler top_one(SamplingOptions{0.8f, 1, 1.0f, 7});
+  for (size_t i = 0; i < 10; ++i) assert(top_one.sample(sample_logits) == 3);
+  Sampler nucleus_one(SamplingOptions{1.0f, 0, 0.01f, 7});
+  for (size_t i = 0; i < 10; ++i) assert(nucleus_one.sample(sample_logits) == 3);
+  Sampler seeded_left(SamplingOptions{1.0f, 3, 0.9f, 1234});
+  Sampler seeded_right(SamplingOptions{1.0f, 3, 0.9f, 1234});
+  for (size_t i = 0; i < 32; ++i)
+    assert(seeded_left.sample(sample_logits) == seeded_right.sample(sample_logits));
+  bool rejected_temperature = false, rejected_top_p = false;
+  try { Sampler invalid(SamplingOptions{-1.0f, 0, 1.0f, 0}); }
+  catch (const std::invalid_argument&) { rejected_temperature = true; }
+  try { Sampler invalid(SamplingOptions{1.0f, 0, 0.0f, 0}); }
+  catch (const std::invalid_argument&) { rejected_top_p = true; }
+  assert(rejected_temperature && rejected_top_p);
+
   // Llama non-interleaved RoPE rotates dimensions i and i + head_dim / 2.
   Tensor rotated({4});
   rotated[0] = 1.0f; rotated[1] = 2.0f; rotated[2] = 3.0f; rotated[3] = 4.0f;
@@ -118,6 +138,9 @@ int main() {
   const std::vector<int> recomputed = generate(model, cpu, {1}, 3, CacheMode::Recompute);
   assert(cached.size() == 4);
   assert(cached == recomputed);
+  const SamplingOptions seeded_sampling{0.8f, 2, 0.9f, 99};
+  assert(generate(model, cpu, {1}, 3, CacheMode::KV, seeded_sampling) ==
+         generate(model, cpu, {1}, 3, CacheMode::KV, seeded_sampling));
   KVCache decode_cache(model.config.layers, 3, model.config.kv_heads,
                        model.config.hidden / model.config.heads);
   Tensor first_logits = forward_token(model, cpu, 1, 0, decode_cache);
