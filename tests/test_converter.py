@@ -145,7 +145,7 @@ def reference_logits(config, weights, tokens):
 
 
 def main():
-    converter, infer = sys.argv[1:]
+    converter, infer, evaluator = sys.argv[1:]
     config = {
         "architectures": ["LlamaForCausalLM"], "model_type": "llama",
         "vocab_size": 8, "hidden_size": 4, "num_hidden_layers": 1,
@@ -208,6 +208,21 @@ def main():
         assert len(trace["layers"]) == 1
         assert max(abs(a - b) for a, b in zip(trace["logits"], expected)) < 2e-5
 
+        corpus = root / "corpus.txt"
+        corpus.write_text("ab a", encoding="utf-8")
+        evaluation = json.loads(subprocess.run(
+            [evaluator, str(output), str(corpus), "--json"], check=True,
+            text=True, capture_output=True).stdout)
+        first_step_logits = reference_logits(config, weights, [6])
+        maximum = max(first_step_logits)
+        expected_nll = (math.log(sum(math.exp(value - maximum)
+                                     for value in first_step_logits)) + maximum
+                        - first_step_logits[7])
+        assert evaluation["tokens"] == 2
+        assert evaluation["predictions"] == 1
+        assert abs(evaluation["negative_log_likelihood"] - expected_nll) < 2e-5
+        assert abs(evaluation["perplexity"] - math.exp(expected_nll)) < 2e-4
+
         # Version 4 Q8-per-row weights stay compressed and produce finite,
         # deterministic logits without expanding the model at load time.
         quantized_output = root / "tiny-q8.miniinfer"
@@ -230,6 +245,10 @@ def main():
             [infer, "--generate-ids", str(quantized_output), "ab a", "2"],
             check=True, text=True, capture_output=True).stdout
         assert first_generation == second_generation
+        quantized_evaluation = json.loads(subprocess.run(
+            [evaluator, str(quantized_output), str(corpus), "--json"], check=True,
+            text=True, capture_output=True).stdout)
+        assert math.isfinite(quantized_evaluation["perplexity"])
 
         truncated_q8 = root / "truncated-q8.miniinfer"
         truncated_q8.write_bytes(quantized_output.read_bytes()[:-1])

@@ -33,6 +33,7 @@ documented below.
 - Batched layer-major prefill for exercising matrix-matrix linear operations.
 - An offline, streaming Hugging Face safetensors converter.
 - Development trace/export tools for comparison with Hugging Face.
+- Cross-entropy and perplexity evaluation over a local tokenized corpus.
 - An optional Dawn WebGPU F32 linear backend and numerical matmul benchmark.
 - A C API and CPU-WASM browser demo with token callbacks.
 
@@ -311,6 +312,26 @@ reduced size and loading cost, but this straightforward dequantizing kernel did
 not outperform BF16 AVX2 end to end in the short benchmark. The benchmark keeps
 those tradeoffs visible instead of assuming a predetermined speedup.
 
+## Measure cross-entropy and perplexity
+
+Use the same text and token prefix to compare floating-point and quantized
+models:
+
+```sh
+./build-avx2/miniinfer-eval smollm2-135m.miniinfer corpus.txt \
+  --max-tokens 128 --threads 4 --cpu-kernel avx2 --json
+
+./build-avx2/miniinfer-eval smollm2-135m-q8.miniinfer corpus.txt \
+  --max-tokens 128 --threads 4 --cpu-kernel avx2 --json
+```
+
+For tokens `t[0..N-1]`, the evaluator performs `N-1` next-token predictions and
+reports total negative log-likelihood, mean cross-entropy, perplexity, load
+time, evaluation time, and tokens/sec. It uses the runtime tokenizer and KV
+cache rather than a Python reference. Inputs longer than the model context are
+rejected unless `--max-tokens` selects a valid prefix, making comparisons
+explicit and repeatable.
+
 ## Correctness and diagnostics
 
 Deterministic CLI modes expose intermediate state:
@@ -379,7 +400,7 @@ llama.cpp.
 include/miniinfer/   Public C++ and C interfaces
 src/                 Tensor, tokenizer, model, transformer, and backend code
 tools/               CLI, converter, benchmark, and Hugging Face comparison
-tests/               C++ unit tests and end-to-end converter test
+tests/               C++ unit tests and end-to-end conversion/evaluation test
 docs/                Binary model-format specification
 shaders/             WGSL compute kernels
 web/                 Minimal browser demo
@@ -389,8 +410,8 @@ web/                 Minimal browser demo
 
 - Sampling uses a fixed seed for reproducibility but does not yet expose
   repetition, frequency, or presence penalties.
-- Q8 is a simple per-row scheme and needs perplexity evaluation plus better
-  quantization before quality claims.
+- Q8 is a simple per-row scheme. The evaluator can measure it on local text,
+  but no representative benchmark corpus has been published yet.
 - AVX2 is the only optimized CPU ISA; ARM NEON and other SIMD paths are absent.
 - WebGPU currently accelerates only F32 linear operations and synchronizes
   output to the host after each call.

@@ -40,6 +40,8 @@ if(NOT EMSCRIPTEN)
   target_link_libraries(infer PRIVATE miniinfer)
   add_executable(miniinfer-bench tools/bench.cpp)
   target_link_libraries(miniinfer-bench PRIVATE miniinfer)
+  add_executable(miniinfer-eval tools/eval.cpp)
+  target_link_libraries(miniinfer-eval PRIVATE miniinfer)
   add_executable(miniinfer-convert tools/convert.cpp)
   target_link_libraries(miniinfer-convert PRIVATE miniinfer)
   target_compile_definitions(miniinfer-convert PRIVATE
@@ -68,5 +70,6 @@ if(MINIINFER_BUILD_TESTS AND NOT EMSCRIPTEN)
   add_test(NAME miniinfer-tests COMMAND miniinfer-tests)
   add_test(NAME miniinfer-converter-test
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_converter.py
-            $<TARGET_FILE:miniinfer-convert> $<TARGET_FILE:infer>)
+            $<TARGET_FILE:miniinfer-convert> $<TARGET_FILE:infer>
+            $<TARGET_FILE:miniinfer-eval>)
 endif()
