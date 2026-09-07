@@ -145,7 +145,7 @@ def reference_logits(config, weights, tokens):
 
 
 def main():
-    converter, infer, evaluator = sys.argv[1:]
+    converter, infer, evaluator, benchmark = sys.argv[1:]
     config = {
         "architectures": ["LlamaForCausalLM"], "model_type": "llama",
         "vocab_size": 8, "hidden_size": 4, "num_hidden_layers": 1,
@@ -222,6 +222,15 @@ def main():
         assert evaluation["predictions"] == 1
         assert abs(evaluation["negative_log_likelihood"] - expected_nll) < 2e-5
         assert abs(evaluation["perplexity"] - math.exp(expected_nll)) < 2e-4
+        benchmark_result = json.loads(subprocess.run(
+            [benchmark, str(output), "ab a", "--cache", "both",
+             "--max-tokens", "2", "--repetitions", "2", "--json"],
+            check=True, text=True, capture_output=True).stdout)
+        assert benchmark_result["repetitions"] == 2
+        assert benchmark_result["max_tokens"] == 2
+        assert benchmark_result["equivalence"]["tokens_identical"] is True
+        assert benchmark_result["equivalence"]["max_logit_abs"] == 0
+        assert benchmark_result["batched_prefill"]["incremental_max_logit_abs"] < 1e-5
 
         # Version 4 Q8-per-row weights stay compressed and produce finite,
         # deterministic logits without expanding the model at load time.

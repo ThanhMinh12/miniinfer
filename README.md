@@ -286,16 +286,20 @@ Use `quick` on low-power machines and `extended` for longer measurements:
 
 ```sh
 ./build/miniinfer-bench smollm2-135m.miniinfer "Hello" \
-  --preset quick --cache both --threads 4 --cpu-kernel scalar
+  --preset quick --cache both --threads 4 --cpu-kernel scalar --json
 
 ./build-avx2/miniinfer-bench smollm2-135m.miniinfer "Hello" \
-  --preset extended --cache kv --threads 4 --cpu-kernel avx2
+  --preset extended --cache kv --threads 4 --cpu-kernel avx2 \
+  --max-tokens 32 --repetitions 5
 ```
 
-`quick` generates two tokens; `extended` generates 16. The executable reports
-model load, incremental prefill, decode, total throughput, and layer-major
-batched prefill. `--cache both` exits with failure unless cache and recompute
-logits and tokens are identical.
+`quick` defaults to two generated tokens and one repetition; `extended` defaults
+to 16 tokens and three repetitions. Explicit `--max-tokens` and
+`--repetitions` values override either preset. Multi-run output reports median
+prefill and decode timings to reduce one-off scheduling noise. `--json` emits a
+single machine-readable object suitable for scripts or benchmark archives.
+`--cache both` exits with failure unless cache and recompute logits and tokens
+are identical.
 
 Measurements below use the one-token prompt `Hello` and quick preset. They are
 development-machine observations, not portable performance promises:

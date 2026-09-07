@@ -71,5 +71,5 @@ if(MINIINFER_BUILD_TESTS AND NOT EMSCRIPTEN)
   add_test(NAME miniinfer-converter-test
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_converter.py
             $<TARGET_FILE:miniinfer-convert> $<TARGET_FILE:infer>
-            $<TARGET_FILE:miniinfer-eval>)
+            $<TARGET_FILE:miniinfer-eval> $<TARGET_FILE:miniinfer-bench>)
 endif()
