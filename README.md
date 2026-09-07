@@ -1,5 +1,7 @@
 # MiniInfer
 
+[![CI](https://github.com/ThanhMinh12/miniinfer/actions/workflows/ci.yml/badge.svg)](https://github.com/ThanhMinh12/miniinfer/actions/workflows/ci.yml)
+
 MiniInfer is a dependency-light C++ inference engine built to answer one
 question: **what actually has to happen between a language-model checkpoint and
 the next generated token?**
@@ -223,6 +225,12 @@ ctest --test-dir build-avx2 --output-on-failure
 
 The project uses C++17 for CPU builds and provides scalar fallback on all
 platforms supported by CMake and the standard library.
+
+Every push and pull request runs the default CPU build and complete test suite
+on Linux, macOS, and Windows. A separate Linux job compiles the isolated AVX2
+translation unit and reruns the suite with runtime dispatch enabled. Dawn and
+Emscripten remain opt-in because their SDKs are not installed by the default CI
+matrix.
 
 ## Convert SmolLM2
 
